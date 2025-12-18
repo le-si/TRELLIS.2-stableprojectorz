@@ -1,3 +1,4 @@
+# trellis2/modules/utils.py
 import torch
 import torch.nn as nn
 from ..modules import sparse as sp

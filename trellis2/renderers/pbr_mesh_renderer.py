@@ -1,3 +1,4 @@
+# trellis2/renderers/pbr_mesh_renderer.py
 from typing import *
 import torch
 from easydict import EasyDict as edict

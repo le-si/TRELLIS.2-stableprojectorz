@@ -1,3 +1,4 @@
+# o-voxel/examples/render_ovox.py
 import torch
 import numpy as np
 import imageio

@@ -1,3 +1,4 @@
+# trellis2/pipelines/samplers/classifier_free_guidance_mixin.py
 from typing import *
 
 

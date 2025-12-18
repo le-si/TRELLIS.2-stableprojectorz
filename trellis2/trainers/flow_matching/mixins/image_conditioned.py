@@ -1,3 +1,4 @@
+# trellis2/trainers/flow_matching/mixins/image_conditioned.py
 from typing import *
 import torch
 import torch.nn.functional as F

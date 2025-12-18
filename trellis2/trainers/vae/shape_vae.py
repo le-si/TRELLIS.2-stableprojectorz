@@ -1,3 +1,4 @@
+# trellis2/trainers/vae/shape_vae.py
 from typing import *
 import os
 import copy

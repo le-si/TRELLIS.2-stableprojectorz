@@ -1,3 +1,4 @@
+# trellis2/utils/mesh_utils.py
 from typing import Tuple, Dict
 import numpy as np
 from trimesh import grouping, util, remesh

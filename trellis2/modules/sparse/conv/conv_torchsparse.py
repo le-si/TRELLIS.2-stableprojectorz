@@ -1,3 +1,4 @@
+# trellis2/modules/sparse/conv/conv_torchsparse.py
 import torch
 import torch.nn as nn
 from .. import SparseTensor

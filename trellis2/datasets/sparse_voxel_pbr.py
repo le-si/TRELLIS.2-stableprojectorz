@@ -1,3 +1,4 @@
+# trellis2/datasets/sparse_voxel_pbr.py
 import os
 import io
 from typing import Union

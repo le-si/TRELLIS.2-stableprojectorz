@@ -1,3 +1,4 @@
+# trellis2/trainers/flow_matching/mixins/text_conditioned.py
 from typing import *
 import os
 os.environ['TOKENIZERS_PARALLELISM'] = 'true'

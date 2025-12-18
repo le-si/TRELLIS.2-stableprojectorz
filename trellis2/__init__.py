@@ -1,3 +1,4 @@
+# trellis2/__init__.py
 from . import models
 from . import modules
 from . import pipelines

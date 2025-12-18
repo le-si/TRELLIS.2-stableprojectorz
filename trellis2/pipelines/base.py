@@ -1,3 +1,4 @@
+# trellis2/pipelines/base.py
 from typing import *
 import torch
 import torch.nn as nn

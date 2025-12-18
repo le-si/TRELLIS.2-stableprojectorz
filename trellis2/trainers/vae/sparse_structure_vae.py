@@ -1,3 +1,4 @@
+# trellis2/trainers/vae/sparse_structure_vae.py
 from typing import *
 import copy
 import torch

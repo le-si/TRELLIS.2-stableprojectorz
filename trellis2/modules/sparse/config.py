@@ -1,3 +1,4 @@
+# trellis2/modules/sparse/config.py
 from typing import *
 
 CONV = 'flex_gemm' 

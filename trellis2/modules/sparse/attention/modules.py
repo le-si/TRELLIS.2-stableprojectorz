@@ -1,3 +1,4 @@
+# trellis2/modules/sparse/attention/modules.py
 from typing import *
 import torch
 import torch.nn as nn

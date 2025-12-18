@@ -1,3 +1,4 @@
+# trellis2/modules/sparse/nonlinearity.py
 import torch
 import torch.nn as nn
 from . import VarLenTensor

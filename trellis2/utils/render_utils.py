@@ -1,3 +1,4 @@
+# trellis2/utils/render_utils.py
 import torch
 import numpy as np
 from tqdm import tqdm

@@ -1,3 +1,4 @@
+# trellis2/models/sparse_elastic_mixin.py
 from contextlib import contextmanager
 from typing import *
 import math

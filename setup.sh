@@ -1,3 +1,4 @@
+# setup.sh
 # Read Arguments
 TEMP=`getopt -o h --long help,new-env,basic,flash-attn,cumesh,o-voxel,flexgemm,nvdiffrast,nvdiffrec -n 'setup.sh' -- "$@"`
 

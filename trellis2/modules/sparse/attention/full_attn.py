@@ -1,3 +1,4 @@
+# trellis2/modules/sparse/attention/full_attn.py
 from typing import *
 import torch
 from .. import VarLenTensor

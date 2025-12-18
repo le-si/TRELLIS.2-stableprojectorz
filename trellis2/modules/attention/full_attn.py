@@ -1,3 +1,4 @@
+# trellis2/modules/attention/full_attn.py
 from typing import *
 import torch
 import math

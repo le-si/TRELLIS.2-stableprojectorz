@@ -1,3 +1,4 @@
+# trellis2/models/sc_vaes/fdg_vae.py
 from typing import *
 import torch
 import torch.nn as nn

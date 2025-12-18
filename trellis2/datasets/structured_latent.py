@@ -1,3 +1,4 @@
+# trellis2/datasets/structured_latent.py
 import json
 import os
 from typing import *

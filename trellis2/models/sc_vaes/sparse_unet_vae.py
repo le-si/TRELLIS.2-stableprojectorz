@@ -1,3 +1,4 @@
+# trellis2/models/sc_vaes/sparse_unet_vae.py
 from typing import *
 import torch
 import torch.nn as nn

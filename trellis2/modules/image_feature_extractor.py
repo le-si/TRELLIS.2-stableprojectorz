@@ -1,3 +1,4 @@
+# trellis2/modules/image_feature_extractor.py
 from typing import *
 import torch
 import torch.nn.functional as F

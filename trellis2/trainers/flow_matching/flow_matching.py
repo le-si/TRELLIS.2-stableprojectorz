@@ -1,3 +1,4 @@
+# trellis2/trainers/flow_matching/flow_matching.py
 from typing import *
 import copy
 import torch

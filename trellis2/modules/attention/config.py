@@ -1,3 +1,4 @@
+# trellis2/modules/attention/config.py
 from typing import *
 
 BACKEND = 'flash_attn' 

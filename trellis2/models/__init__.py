@@ -1,3 +1,4 @@
+# trellis2/models/__init__.py
 import importlib
 
 __attributes = {

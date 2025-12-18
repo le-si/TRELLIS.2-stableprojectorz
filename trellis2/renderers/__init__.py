@@ -1,3 +1,4 @@
+# trellis2/renderers/__init__.py
 import importlib
 
 __attributes = {

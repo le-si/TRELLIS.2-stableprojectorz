@@ -1,3 +1,4 @@
+# trellis2/utils/vis_utils.py
 from typing import *
 import numpy as np
 import torch

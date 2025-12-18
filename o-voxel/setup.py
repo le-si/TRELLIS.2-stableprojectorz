@@ -1,3 +1,4 @@
+# o-voxel/setup.py
 from setuptools import setup
 from torch.utils.cpp_extension import CUDAExtension, BuildExtension, IS_HIP_EXTENSION
 import os

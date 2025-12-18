@@ -1,3 +1,4 @@
+# trellis2/trainers/flow_matching/mixins/classifier_free_guidance.py
 import torch
 import numpy as np
 from ....utils.general_utils import dict_foreach

@@ -1,3 +1,4 @@
+# trellis2/modules/sparse/basic.py
 from typing import *
 from fractions import Fraction
 import torch

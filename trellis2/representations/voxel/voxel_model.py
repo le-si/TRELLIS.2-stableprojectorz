@@ -1,3 +1,4 @@
+# trellis2/representations/voxel/voxel_model.py
 from typing import Dict
 import torch
 
