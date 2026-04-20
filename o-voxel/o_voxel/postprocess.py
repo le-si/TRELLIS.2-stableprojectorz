@@ -114,10 +114,8 @@ def to_glb(
     mesh.init(vertices, faces)
     
     # --- Initial Mesh Cleaning ---
-    # Fills holes as much as we can before processing
-    mesh.fill_holes(max_hole_perimeter=3e-2)
     if verbose:
-        print(f"After filling holes: {mesh.num_vertices} vertices, {mesh.num_faces} faces")
+        print(f"Initial mesh: {mesh.num_vertices} vertices, {mesh.num_faces} faces")
     vertices, faces = mesh.read()
     if use_tqdm:
         pbar.update(1)
@@ -209,7 +207,6 @@ def to_glb(
         mesh.remove_duplicate_faces()
         mesh.repair_non_manifold_edges()
         mesh.remove_small_connected_components(1e-5)
-        mesh.fill_holes(max_hole_perimeter=3e-2)
         mesh.unify_face_orientations()
         if verbose:
             print(f"After cleanup: {mesh.num_vertices} vertices, {mesh.num_faces} faces")
