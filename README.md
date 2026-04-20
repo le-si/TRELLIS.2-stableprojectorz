@@ -1,3 +1,24 @@
+A One-click installer for Windows: [(Python 3.11, Cuda 12.8, Torch 2.8)](https://github.com/IgorAherne/TRELLIS.2-stableprojectorz/releases/tag/latest)
+
+Repository for integration with the [StableProjectorz](https://stableprojectorz.com/), a free AI-texturing tool.<br>
+Our Discord server: [here](https://discord.gg/aWbnX2qan2)
+
+Optimized the code to fit better into 8GB gpus, even with 1024 voxels.
+
+<h2>If you want to install manually:</h2>
+
+1) use python 3.11
+2) follow steps in `code/install.py` around line 130, method `install_dependencies()`
+4) you will need to pip install wheel files, find them in `code/whl` folder. Install only whl that are mentioned in 2).
+5) Lastly, from inside the `code` folder, do `git submodule deinit -f --all` and then `git submodule update --init --recursive`.
+6) launch via `python app.py`
+
+
+<br>
+<h2>Original Trellis Repo description:</h2>
+
+<br>
+
 ![](assets/teaser.webp)
 
 # Native and Compact Structured Latents for 3D Generation
