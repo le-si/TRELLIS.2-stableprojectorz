@@ -323,20 +323,34 @@ class SparseConvNeXtBlock3d(nn.Module):
         )
 
     def _forward(self, x: sp.SparseTensor) -> sp.SparseTensor:
-        h = self.conv(x)
+        # Save skip BEFORE conv — conv may free x.feats for large outputs
         if not self.training and x.feats.numel() > 2_000_000:
             x_feats_cpu = x.feats.cpu()
-            x.feats = torch.empty(0, device='cpu')
-            torch.cuda.empty_cache()
         else:
             x_feats_cpu = None
+        h = self.conv(x)
+        if x_feats_cpu is not None and x.feats.numel() > 0:
+            x.feats = torch.empty(0, device='cpu')
+            torch.cuda.empty_cache()
         h = h.replace(self.norm(h.feats))
-        h = h.replace(self.mlp(h.feats))
+        # Chunk the MLP for large tensors — the 4x channel expansion
+        # creates a massive intermediate (10.7M × 256 × 2 = 5.1GB at level 3).
+        # Processing in 1M-voxel chunks keeps the intermediate at ~512MB.
+        if not self.training and h.feats.shape[0] > 2_000_000:
+            MLP_CHUNK = 1_000_000
+            out_feats = torch.empty_like(h.feats)
+            for s in range(0, h.feats.shape[0], MLP_CHUNK):
+                e = min(s + MLP_CHUNK, h.feats.shape[0])
+                out_feats[s:e] = self.mlp(h.feats[s:e])
+            h = h.replace(out_feats)
+            del out_feats
+        else:
+            h = h.replace(self.mlp(h.feats))
         if x_feats_cpu is not None:
             return h + h.replace(x_feats_cpu.to(h.feats.device))
         else:
             return h + x
-    
+
     def forward(self, x: sp.SparseTensor) -> sp.SparseTensor:
         if self.use_checkpoint:
             return torch.utils.checkpoint.checkpoint(self._forward, x, use_reentrant=False)
@@ -540,6 +554,8 @@ class SparseUnetVaeDecoder(nn.Module):
         subs_gt = []
         subs = []
         for i, res in enumerate(self.blocks):
+            if self.low_vram:
+                res.to(h.device)
             for j, block in enumerate(res):
                 if i < len(self.blocks) - 1 and j == len(res) - 1:
                     if self.pred_subdiv:
@@ -551,12 +567,41 @@ class SparseUnetVaeDecoder(nn.Module):
                         h = block(h, subdiv=guide_subs[i] if guide_subs is not None else None)
                 else:
                     h = block(h)
-            # Free stale cached blocks after each resolution level
+            if self.low_vram:
+                res.cpu()
+            h._spatial_cache.clear()
             torch.cuda.empty_cache()
+
+            torch.cuda.synchronize()
+            a = torch.cuda.memory_allocated() / 1024**2
+            r = torch.cuda.memory_reserved() / 1024**2
+            print(f"[VRAM] decoder level {i} done: alloc={a:.0f}MB  reserved={r:.0f}MB  voxels={h.feats.shape[0]}  channels={h.feats.shape[1]}")
+
+        # Defragment: the reserved pool has ~1.3GB of dead fragments from the
+        # decoder levels that empty_cache can't return while h.feats occupies
+        # GPU.  Bounce feats through CPU so the allocator can compact fully,
+        # then reload into a contiguous block.  Adds ~200ms of PCIe transfer
+        # but prevents ~1.5GB of wasted reserved memory during layer_norm.
+        if not self.training:
+            h_feats_cpu = h.feats.cpu()
+            h = h.replace(torch.empty(0, dtype=h.feats.dtype, device='cpu'))
+            torch.cuda.empty_cache()
+            h = h.replace(h_feats_cpu.to(x.device))
+            del h_feats_cpu
 
         if self.training:
             h = h.type(x.dtype)
-        h = h.replace(F.layer_norm(h.feats, h.feats.shape[-1:]))
+        # Chunked in-place layer_norm to avoid allocating a full copy of feats.
+        # At 10.7M voxels × 64ch × 2 bytes = 1.37GB, the full copy pushes
+        # reserved from ~3GB to ~4.3GB.  Processing in 1M-row chunks keeps
+        # the temporary at ~128MB.  Safe in inference (no autograd graph).
+        if not self.training:
+            LN_CHUNK = 1_000_000
+            for s in range(0, h.feats.shape[0], LN_CHUNK):
+                e = min(s + LN_CHUNK, h.feats.shape[0])
+                h.feats[s:e] = F.layer_norm(h.feats[s:e], h.feats.shape[-1:])
+        else:
+            h = h.replace(F.layer_norm(h.feats, h.feats.shape[-1:]))
         h = self.output_layer(h)
         if self.training and self.pred_subdiv:
             return h, subs_gt, subs

@@ -165,10 +165,13 @@ async def _run_pipeline_generate_and_export(image: Image.Image, arg: GenerationA
 
             # Run the full pipeline (shape + texture in one pass)
             import os
-            _cache_path = file_manager.get_temp_path("_debug_mesh_cache.pt")
-            if os.path.exists(_cache_path):
+            from trellis2.modules.sparse import SparseTensor
+            _mesh_cache_path = file_manager.get_temp_path("_debug_mesh_cache.pt")
+            _latent_cache_path = file_manager.get_temp_path("_debug_latent_cache.pt")
+
+            if os.path.exists(_mesh_cache_path):
                 logger.info("Loading cached mesh (delete temp/_debug_mesh_cache.pt to regenerate)")
-                _cached = torch.load(_cache_path, weights_only=False)
+                _cached = torch.load(_mesh_cache_path, weights_only=False)
                 from trellis2.representations import MeshWithVoxel
                 mesh = MeshWithVoxel(
                     _cached['vertices'].cuda(), _cached['faces'].cuda(),
@@ -177,16 +180,25 @@ async def _run_pipeline_generate_and_export(image: Image.Image, arg: GenerationA
                     _cached['voxel_shape'], _cached['layout'],
                 )
                 del _cached
-            else:
-                mesh = pipeline.run(
-                    image,
-                    seed=arg.seed,
-                    preprocess_image=True,
-                    sparse_structure_sampler_params=ss_params,
-                    shape_slat_sampler_params=shape_params,
-                    tex_slat_sampler_params=tex_params,
-                    pipeline_type=arg.pipeline_type,
-                )[0]
+
+            elif os.path.exists(_latent_cache_path):
+                logger.info("Loading cached latents (delete temp/_debug_latent_cache.pt to re-sample)")
+                _cached = torch.load(_latent_cache_path, weights_only=False)
+                shape_slat = SparseTensor(
+                    feats=_cached['shape_feats'].cuda(),
+                    coords=_cached['shape_coords'].cuda(),
+                )
+                tex_slat = SparseTensor(
+                    feats=_cached['tex_feats'].cuda(),
+                    coords=_cached['tex_coords'].cuda(),
+                )
+                res = _cached['resolution']
+                del _cached
+                torch.cuda.empty_cache()
+                mesh = pipeline.decode_and_cleanup(shape_slat, tex_slat, res)[0]
+                del shape_slat, tex_slat
+                torch.cuda.empty_cache()
+                # Save mesh cache so next run skips decode too
                 torch.save({
                     'vertices': mesh.vertices.cpu(),
                     'faces': mesh.faces.cpu(),
@@ -196,8 +208,44 @@ async def _run_pipeline_generate_and_export(image: Image.Image, arg: GenerationA
                     'origin': mesh.origin.tolist(),
                     'voxel_size': mesh.voxel_size,
                     'layout': mesh.layout,
-                }, _cache_path)
-                logger.info(f"Mesh cached to {_cache_path}")
+                }, _mesh_cache_path)
+                logger.info(f"Mesh cached to {_mesh_cache_path}")
+
+            else:
+                shape_slat, tex_slat, res = pipeline.run(
+                    image,
+                    seed=arg.seed,
+                    preprocess_image=True,
+                    sparse_structure_sampler_params=ss_params,
+                    shape_slat_sampler_params=shape_params,
+                    tex_slat_sampler_params=tex_params,
+                    pipeline_type=arg.pipeline_type,
+                    return_before_decode=True,
+                )
+                # Save latent cache — allows replaying just the decode phase
+                torch.save({
+                    'shape_feats': shape_slat.feats.cpu(),
+                    'shape_coords': shape_slat.coords.cpu(),
+                    'tex_feats': tex_slat.feats.cpu(),
+                    'tex_coords': tex_slat.coords.cpu(),
+                    'resolution': res,
+                }, _latent_cache_path)
+                logger.info(f"Latents cached to {_latent_cache_path}")
+
+                mesh = pipeline.decode_and_cleanup(shape_slat, tex_slat, res)[0]
+                del shape_slat, tex_slat
+                torch.cuda.empty_cache()
+                torch.save({
+                    'vertices': mesh.vertices.cpu(),
+                    'faces': mesh.faces.cpu(),
+                    'coords': mesh.coords.cpu(),
+                    'attrs': mesh.attrs.cpu(),
+                    'voxel_shape': mesh.voxel_shape,
+                    'origin': mesh.origin.tolist(),
+                    'voxel_size': mesh.voxel_size,
+                    'layout': mesh.layout,
+                }, _mesh_cache_path)
+                logger.info(f"Mesh cached to {_mesh_cache_path}")
 
 
             logger.info("Pipeline generation complete, exporting to GLB...")

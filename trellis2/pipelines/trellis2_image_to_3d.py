@@ -437,6 +437,13 @@ class Trellis2ImageTo3DPipeline(Pipeline):
         # Step 1: Run decoder backbone only (parent class forward)
         decoded = SparseUnetVaeDecoder.forward(decoder, slat, return_subs=True)
         h, subs = decoded
+        # Free accumulated neighbor maps from the decoder forward pass.
+        # h and all subs share the same _spatial_cache dict via replace();
+        # .clear() modifies it in-place so ALL references release GPU tensors.
+        h._spatial_cache.clear()
+
+        torch.cuda.synchronize()
+        print(f"[VRAM] after shape decoder forward + cache clear: alloc={torch.cuda.memory_allocated()/1024**2:.0f}MB  reserved={torch.cuda.memory_reserved()/1024**2:.0f}MB")
 
         # Step 2: Free decoder weights before mesh extraction
         if self.low_vram:
@@ -539,9 +546,18 @@ class Trellis2ImageTo3DPipeline(Pipeline):
         """
         from trellis2.modules.sparse.conv import conv_flex_gemm
 
+        def _vram(label):
+            torch.cuda.synchronize()
+            a = torch.cuda.memory_allocated() / 1024**2
+            r = torch.cuda.memory_reserved() / 1024**2
+            print(f"[VRAM] {label}: alloc={a:.0f}MB  reserved={r:.0f}MB")
+
+        _vram("decode_latent entry")
+
         # Offload tex_slat to CPU during shape decoding — not needed until texture phase
         tex_slat = tex_slat.to('cpu')
         torch.cuda.empty_cache()
+        _vram("after tex_slat offload")
 
         # 1. Load shape decoder, run, and clear
         shape_dec = self.models['shape_slat_decoder']
@@ -549,14 +565,19 @@ class Trellis2ImageTo3DPipeline(Pipeline):
             shape_dec.convert_to_fp16()
             shape_dec.dtype = torch.float16
         if self.low_vram:
-            shape_dec.to(self.device)
+            shape_dec.low_vram = True
+            shape_dec.from_latent.to(self.device)
+            shape_dec.output_layer.to(self.device)
+        _vram("after shape_dec to GPU")
 
         meshes, subs = self.decode_shape_slat(shape_slat, resolution)
+        _vram("after decode_shape_slat")
 
         del shape_slat
         if self.low_vram:
             shape_dec.cpu()
         torch.cuda.empty_cache()
+        _vram("after shape_dec offload + empty_cache")
 
         # Offload subs to CPU between decoder phases
         subs = [s.to('cpu') for s in subs]
@@ -566,6 +587,7 @@ class Trellis2ImageTo3DPipeline(Pipeline):
             m.vertices = m.vertices.cpu()
             m.faces = m.faces.cpu()
         torch.cuda.empty_cache()
+        _vram("after subs+meshes offload")
 
         # Reload tex_slat for texture decoding
         tex_slat = tex_slat.to(self.device)
@@ -576,18 +598,26 @@ class Trellis2ImageTo3DPipeline(Pipeline):
             tex_dec.convert_to_fp16()
             tex_dec.dtype = torch.float16
         if self.low_vram:
-            tex_dec.to(self.device)
+            tex_dec.low_vram = True
+            tex_dec.from_latent.to(self.device)
+            tex_dec.output_layer.to(self.device)
+        _vram("after tex_dec to GPU")
 
         # Wrap subs for lazy one-at-a-time GPU loading
         subs = _LazyCudaSubs(subs, self.device)
 
         tex_voxels = self.decode_tex_slat(tex_slat, subs)
+        # Free accumulated neighbor maps from the texture decoder forward pass.
+        # Same in-place .clear() pattern — all references see the empty dict.
+        tex_voxels._spatial_cache.clear()
+        _vram("after decode_tex_slat + cache clear")
 
         del tex_slat
         del subs
         if self.low_vram:
             tex_dec.cpu()
         torch.cuda.empty_cache()
+        _vram("after tex_dec offload + empty_cache")
 
         # 3. Assemble meshes
         out_mesh = []
@@ -599,12 +629,35 @@ class Trellis2ImageTo3DPipeline(Pipeline):
                     m.vertices, m.faces,
                     origin = [-0.5, -0.5, -0.5],
                     voxel_size = 1 / resolution,
-                    coords = v.coords[:, 1:],  # Native int32 is safe here
+                    coords = v.coords[:, 1:].contiguous(),  # .contiguous() breaks storage ref to full SparseTensor
                     attrs = v.feats.half(),    # Compress the final output to FP16 for the Rendering phase
                     voxel_shape = torch.Size([*v.shape, *v.spatial_shape]),
                     layout=self.pbr_attr_layout
                 )
             )
+        _vram("after mesh assembly")
+        return out_mesh
+
+
+    @torch.inference_mode()
+    def decode_and_cleanup(
+        self,
+        shape_slat: SparseTensor,
+        tex_slat: SparseTensor,
+        resolution: int,
+    ) -> List[MeshWithVoxel]:
+        """
+        Decode latents into meshes and offload decoders afterward.
+        Separated from run() so cached latents can skip sampling
+        and replay just the decode phase.
+        """
+        shape_slat._spatial_cache = {}
+        tex_slat._spatial_cache = {}
+        out_mesh = self.decode_latent(shape_slat, tex_slat, resolution)
+        for name, model in self.models.items():
+            if 'decoder' in name:
+                model.cpu()
+        torch.cuda.empty_cache()
         return out_mesh
 
     
@@ -619,6 +672,7 @@ class Trellis2ImageTo3DPipeline(Pipeline):
         tex_slat_sampler_params: dict = {},
         preprocess_image: bool = True,
         return_latent: bool = False,
+        return_before_decode: bool = False,
         pipeline_type: Optional[str] = None,
         max_num_tokens: int = 49152,
     ) -> List[MeshWithVoxel]:
@@ -753,6 +807,8 @@ class Trellis2ImageTo3DPipeline(Pipeline):
         # Clear flow model neighbor caches from latent SparseTensors — no longer needed
         shape_slat._spatial_cache = {}
         tex_slat._spatial_cache = {}
+        if return_before_decode:
+            return shape_slat, tex_slat, res
         
         # Decode the generated latents into the final mesh
         out_mesh = self.decode_latent(shape_slat, tex_slat, res)
