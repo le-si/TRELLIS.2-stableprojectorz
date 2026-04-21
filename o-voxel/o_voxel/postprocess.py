@@ -126,6 +126,7 @@ def to_glb(
     if verbose:
         print(f"Building BVH for current mesh...", end='', flush=True)
     bvh = cumesh.cuBVH(vertices, faces)
+    _mesh_offloaded = False
     if use_tqdm:
         pbar.update(1)
     if verbose:
@@ -191,6 +192,13 @@ def to_glb(
             verbose = verbose,
             bvh = bvh,
         )
+        # Offload original mesh to CPU and free BVH — not needed until texture baking.
+        vertices_cpu = vertices.cpu()
+        faces_cpu = faces.cpu()
+        del vertices, faces, bvh
+        torch.cuda.empty_cache()
+        _mesh_offloaded = True
+
         mesh = cumesh.CuMesh()
         mesh.init(remesh_verts, remesh_faces)
         del remesh_verts, remesh_faces
@@ -291,6 +299,16 @@ def to_glb(
     
     # Map these positions back to the *original* high-res mesh to get accurate attributes
     # This corrects geometric errors introduced by simplification/remeshing
+    if _mesh_offloaded:
+        vertices = vertices_cpu.cuda()
+        faces = faces_cpu.cuda()
+        del vertices_cpu, faces_cpu
+        if verbose:
+            print("Building BVH for texture baking...", end='', flush=True)
+        bvh = cumesh.cuBVH(vertices, faces)
+        if verbose:
+            print("Done")
+
     _, face_id, uvw = bvh.unsigned_distance(valid_pos, return_uvw=True)
     orig_tri_verts = vertices[faces[face_id.long()]] # (N_new, 3, 3)
     valid_pos = (orig_tri_verts * uvw.unsqueeze(-1)).sum(dim=1)

@@ -175,8 +175,10 @@ async def _run_pipeline_generate_and_export(image: Image.Image, arg: GenerationA
 
             logger.info("Pipeline generation complete, exporting to GLB...")
 
-            # Simplify to nvdiffrast limit before GLB export
-            mesh.simplify(16777216)
+            # Simplify before GLB export — 2M faces is sufficient for BVH texture
+            # baking accuracy at 2048 texture size, and drastically reduces VRAM
+            # during remeshing (from ~4GB peak to ~500MB)
+            mesh.simplify(2000000)
 
             # Convert attrs from fp16 to fp32 for GLB texture baking (grid_sample_3d requires matching dtypes)
             mesh.attrs = mesh.attrs.float()
