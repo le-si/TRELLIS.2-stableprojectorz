@@ -5,6 +5,8 @@ Our Discord server: [here](https://discord.gg/aWbnX2qan2)
 
 Optimized the code to fit better into 8GB gpus, even with 1024 voxels.
 
+Also, fixed the nasty vertical lines [bug](https://www.reddit.com/r/StableDiffusion/comments/1r197yy/trellis_2_3d_model_generation_problems/) thanks to the [visualbruno Bruno Fargnoli](https://github.com/visualbruno)
+
 <h2>If you want to install manually:</h2>
 
 1) use python 3.11
