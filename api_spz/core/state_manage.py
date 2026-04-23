@@ -72,6 +72,7 @@ class TrellisState:
         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "garbage_collection_threshold:0.65"
         os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
         os.environ.setdefault('SPARSE_DEBUG', '0')
+        os.environ.setdefault('SETUPTOOLS_USE_DISTUTILS', 'stdlib')
 
         _apply_patches()
 
