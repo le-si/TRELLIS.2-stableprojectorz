@@ -73,6 +73,19 @@ def get_git_env() -> dict:
     
     return env
 
+
+def _gpu_supports_flash_attn():
+    """Check if GPU supports Flash Attention (requires Ampere / sm_80+)."""
+    try:
+        result = subprocess.run(
+            f'"{sys.executable}" -c "import torch; major, _ = torch.cuda.get_device_capability(); print(major >= 8)"',
+            shell=True, capture_output=True, text=True
+        )
+        return result.stdout.strip() == 'True'
+    except:
+        return True  # assume supported if detection fails
+
+
 def run_command_with_retry(cmd: str, desc: Optional[str] = None, max_retries: int = MAX_RETRIES, fatal: bool = True) -> subprocess.CompletedProcess:
     """Run a command with retry logic."""
     last_error = None
@@ -275,6 +288,13 @@ def install_dependencies():
         ]
         run_command_with_retry(f"pip install {' '.join(general_deps)}", "Installing pip packages")
 
+        # 2.1. Install xformers (fallback attention for pre-Ampere GPUs that don't support flash-attention)
+        print("\n--- Installing xformers ---")
+        run_command_with_retry(
+            "pip install xformers==0.0.32.post2 --index-url https://download.pytorch.org/whl/cu128",
+            "Installing xformers"
+        )
+
         # 2.5. Pre-download HuggingFace model weights
         download_hf_models()
 
@@ -320,6 +340,10 @@ def install_dependencies():
         for whl_file in sorted(whl_dir.glob("*.whl")):
             # Pillow-SIMD is handled above
             if whl_file.name.lower().startswith("pillow"):
+                continue
+            # Flash Attention requires Ampere (sm_80+); pre-Ampere uses xformers instead
+            if whl_file.name.lower().startswith("flash_attn") and not _gpu_supports_flash_attn():
+                print(f"Skipping {whl_file.name} (GPU does not support Flash Attention, will use xformers instead)")
                 continue
             print(f"Installing: {whl_file.name}")
             run_command_with_retry(f'pip install "{whl_file}"', f"Installing {whl_file.name}")
