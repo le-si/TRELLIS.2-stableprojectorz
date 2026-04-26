@@ -140,6 +140,54 @@ class Trellis2ImageTo3DPipeline(Pipeline):
             self.image_cond_model.to(device)
             if self.rembg_model is not None:
                 self.rembg_model.to(device)
+        self._convert_bf16_to_fp16_if_needed()
+
+
+    def _convert_bf16_to_fp16_if_needed(self):
+        """Convert all bfloat16 tensors to float16 for widest GPU compatibility."""
+        import torch
+
+        def _half_module(m):
+            """Convert an nn.Module entirely to fp16."""
+            for p in m.parameters():
+                if p.dtype == torch.bfloat16:
+                    p.data = p.data.half()
+            for b in m.buffers():
+                if b.dtype == torch.bfloat16:
+                    b.data = b.data.half()
+            # Catch unregistered tensor attrs (e.g. rope_phases)
+            # and dtype attrs used by manual_cast()
+            for sub in m.modules():
+                for key, val in vars(sub).items():
+                    if isinstance(val, torch.Tensor) and val.dtype == torch.bfloat16:
+                        setattr(sub, key, val.half())
+                    elif val is torch.bfloat16:
+                        setattr(sub, key, torch.float16)
+
+        # 1. Convert all pipeline models
+        for name, model in self.models.items():
+            _half_module(model)
+
+        # 2. Convert any nn.Modules nested inside non-Module wrappers
+        for extra in ('image_cond_model', 'rembg_model'):
+            obj = getattr(self, extra, None)
+            if obj is None:
+                continue
+            if isinstance(obj, torch.nn.Module):
+                _half_module(obj)
+                continue
+            #else,  Walk one level into wrapper attrs to find nn.Modules
+            for attr_val in vars(obj).values():
+                if isinstance(attr_val, torch.nn.Module):
+                    _half_module(attr_val)
+                elif isinstance(attr_val, dict):
+                    for v in attr_val.values():
+                        if isinstance(v, torch.nn.Module):
+                            _half_module(v)
+                elif isinstance(attr_val, (list, tuple)):
+                    for v in attr_val:
+                        if isinstance(v, torch.nn.Module):
+                            _half_module(v)
         
 
     def preprocess_image(self, input: Image.Image) -> Image.Image:
@@ -729,10 +777,10 @@ class Trellis2ImageTo3DPipeline(Pipeline):
         print(f"[TIMING] image_cond_model.to(device): {time.time()-_t0:.2f}s")
         
         _t0 = time.time()
-        cond_512 = self.get_cond([image], 512)
+        cond_512 = self._cast_cond(self.get_cond([image], 512))
         print(f"[TIMING] get_cond(512): {time.time()-_t0:.2f}s")
         
-        cond_1024 = self.get_cond([image], 1024) if pipeline_type != '512' else None
+        cond_1024 = self._cast_cond(self.get_cond([image], 1024)) if pipeline_type != '512' else None
         
         if self.low_vram:
             self.image_cond_model.cpu()
@@ -829,3 +877,17 @@ class Trellis2ImageTo3DPipeline(Pipeline):
             return out_mesh, (shape_slat, tex_slat, res)
         else:
             return out_mesh
+
+
+    def _cast_cond(self, cond):
+        """Cast any bf16 tensors in conditioning data to fp16."""
+        import torch
+        if cond is None:
+            return None
+        if isinstance(cond, torch.Tensor):
+            return cond.half() if cond.dtype == torch.bfloat16 else cond
+        if isinstance(cond, dict):
+            return {k: self._cast_cond(v) for k, v in cond.items()}
+        if isinstance(cond, (list, tuple)):
+            return type(cond)(self._cast_cond(v) for v in cond)
+        return cond

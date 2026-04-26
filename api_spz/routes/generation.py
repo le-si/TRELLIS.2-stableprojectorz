@@ -83,8 +83,8 @@ def _validate_params(image_sources, arg: GenerationArgForm):
         raise HTTPException(status_code=400, detail="Guidance scale must be between 1 and 10")
     if not (1 <= arg.num_inference_steps <= 50):
         raise HTTPException(status_code=400, detail="Inference steps must be between 1 and 50")
-    if not (10000 <= arg.decimation_target <= 500000):
-        raise HTTPException(status_code=400, detail="mesh_simplify must be between 10 and 500")
+    if not (10000 <= arg.decimation_target <= 1000000):
+        raise HTTPException(status_code=400, detail="mesh_simplify must be between 10 and 1000 (thousands)")
     if arg.output_format not in ["glb"]:
         raise HTTPException(status_code=400, detail="Only GLB output format is supported")
 
